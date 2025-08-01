@@ -1,0 +1,73 @@
+name: Deploy to Azure VM
+ 
+on:
+
+  push:
+
+    branches:
+
+      - main  # Change this if your main branch has a different name
+ 
+jobs:
+
+  deploy:
+
+    runs-on: ubuntu-latest
+ 
+    steps:
+
+    - name: Checkout code
+
+      uses: actions/checkout@v3
+ 
+    - name: Set up SSH key
+
+      run: |
+
+        mkdir -p ~/.ssh
+
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+
+        chmod 600 ~/.ssh/id_rsa
+
+        ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+ 
+    - name: Deploy Docker containers on Azure VM
+
+      run: |
+
+        ssh -i ~/.ssh/id_rsa ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+
+          cd ~/app-directory || mkdir ~/app-directory && cd ~/app-directory
+ 
+          # Optional: clean old containers
+
+          docker compose down || true
+ 
+          # Copy latest code
+
+          rm -rf *
+
+          exit
+
+        EOF
+ 
+    - name: Upload files to VM
+
+      run: |
+
+        scp -i ~/.ssh/id_rsa -r ./* ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:~/app-directory/
+ 
+    - name: Start app on VM
+
+      run: |
+
+        ssh -i ~/.ssh/id_rsa ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+
+          cd ~/app-directory
+
+          docker compose up -d --build
+
+        EOF
+
+ 
