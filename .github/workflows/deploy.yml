@@ -1,4 +1,4 @@
-name: SSH Debug
+name: Deploy to Azure VM
 
 on:
   push:
@@ -6,18 +6,35 @@ on:
       - main
 
 jobs:
-  ssh-test:
+  deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts || true
 
-      - name: Add host key
-        run: ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+      - name: Test SSH connection
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} "whoami"
 
-      - name: SSH whoami
-        run: ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} "whoami"
+      - name: Prepare app dir on VM
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
+            "mkdir -p ~/app-directory && cd ~/app-directory && docker compose down || true && rm -rf *"
+
+      - name: Upload files to VM
+        run: |
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -r ./* \
+            ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:~/app-directory/
+
+      - name: Start app on VM
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
+            "cd ~/app-directory && docker compose up -d --build"
